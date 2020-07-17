@@ -8,25 +8,44 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/util/smoothing"
 )
 
+// PARAM_SPEC
+// Amount of deposit for PreCommitting a sector
+// This deposit is lost if a PreCommit is not timely followed up by a ProveCommit
+var PreCommitDepositFactor = 20
+
+// PARAM_SPEC
+// Amount of Pledge to be deposited per sector (in expected block rewards per day)
 // IP = IPBase(precommit time) + AdditionalIP(precommit time)
 // IPBase(t) = BR(t, InitialPledgeProjectionPeriod)
 // AdditionalIP(t) = LockTarget(t)*PledgeShare(t)
 // LockTarget = (LockTargetFactorNum / LockTargetFactorDenom) * FILCirculatingSupply(t)
 // PledgeShare(t) = sectorQAPower / max(BaselinePower(t), NetworkQAPower(t))
 // PARAM_FINISH
-var PreCommitDepositFactor = 20
 var InitialPledgeFactor = 20
 var PreCommitDepositProjectionPeriod = abi.ChainEpoch(PreCommitDepositFactor) * builtin.EpochsInDay
 var InitialPledgeProjectionPeriod = abi.ChainEpoch(InitialPledgeFactor) * builtin.EpochsInDay
+// PARAM_SPEC
+// Fraction of available supply that the AdditionalIP targets to lock.
+// PARAM_FINISH
 var LockTargetFactorNum = big.NewInt(3)
 var LockTargetFactorDenom = big.NewInt(10)
 
+// PARAM_SPEC
+// Amount of fee for faults that have been declared on time.
+// Motivation: This guarantees that a miner pays back the possible block reward earned since last deadline.
+// In current Filecoin, the network must be conservative and assume that the sector was faulty since the last time it was proven.
+// This penalty is currently overly punitive for continued faults.
 // FF = BR(t, DeclaredFaultProjectionPeriod)
 // projection period of 2.14 days:  2880 * 2.14 = 6163.2.  Rounded to nearest epoch 6163
 var DeclaredFaultFactorNum = 214
 var DeclaredFaultFactorDenom = 100
 var DeclaredFaultProjectionPeriod = abi.ChainEpoch((builtin.EpochsInDay * DeclaredFaultFactorNum) / DeclaredFaultFactorDenom)
 
+// PARAM_SPEC
+// Amount of fee for faults that have not been declared on time.
+// Motivation: This fee is higher than FF for two reasons:
+// (1) it guarantees that a miner is incentivized to declare a fault early
+// (2) A miner stores less than (1-spacegap) of a sector, does not not declare it as faulty and hopes to get challenged on the stored parts. SP guarantees that on expectation this strategy would not earn positive rewards.
 // SP = BR(t, UndeclaredFaultProjectionPeriod)
 var UndeclaredFaultProjectionPeriod = abi.ChainEpoch(5) * builtin.EpochsInDay
 
