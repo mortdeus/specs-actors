@@ -507,7 +507,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		Sectors:   bf,
 	}
 
-	msd, ok := MaxSealDuration[params.SealProof]
+	msd, ok := MaxProveCommitDuration[params.SealProof]
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalArgument, "no max seal duration set for proof type: %d", params.SealProof)
 	}
@@ -550,7 +550,7 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 		rt.Abortf(exitcode.ErrNotFound, "no pre-committed sector %v", sectorNo)
 	}
 
-	msd, ok := MaxSealDuration[precommit.Info.SealProof]
+	msd, ok := MaxProveCommitDuration[precommit.Info.SealProof]
 	if !ok {
 		rt.Abortf(exitcode.ErrIllegalState, "no max seal duration for proof type: %d", precommit.Info.SealProof)
 	}
@@ -2166,7 +2166,7 @@ func PowerForSectors(ssize abi.SectorSize, sectors []*SectorOnChainInfo) PowerPa
 
 // The oldest seal challenge epoch that will be accepted in the current epoch.
 func sealChallengeEarliest(currEpoch abi.ChainEpoch, proof abi.RegisteredSealProof) abi.ChainEpoch {
-	return currEpoch - ChainFinality - MaxSealDuration[proof]
+	return currEpoch - ChainFinality - MaxPreCommitRandomnessLookback
 }
 
 func getMinerInfo(rt Runtime, st *State) *MinerInfo {

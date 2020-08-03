@@ -587,7 +587,7 @@ func TestCommitments(t *testing.T) {
 		rt.Reset()
 
 		// Too late.
-		rt.SetEpoch(precommitEpoch + miner.MaxSealDuration[precommit.SealProof] + 1)
+		rt.SetEpoch(precommitEpoch + miner.MaxProveCommitDuration[precommit.SealProof] + 1)
 		rt.ExpectAbort(exitcode.ErrIllegalArgument, func() {
 			actor.proveCommitSectorAndConfirm(rt, precommit, precommitEpoch, makeProveCommit(sectorNo), proveCommitConf{})
 		})
@@ -1072,7 +1072,7 @@ func TestProveCommit(t *testing.T) {
 		rt.SetBalance(big.Add(st.PreCommitDeposits, st.LockedFunds))
 		info := actor.getInfo(rt)
 
-		rt.SetEpoch(precommitEpoch + miner.MaxSealDuration[info.SealProofType] - 1)
+		rt.SetEpoch(precommitEpoch + miner.MaxProveCommitDuration[info.SealProofType] - 1)
 		rt.ExpectAbort(exitcode.ErrInsufficientFunds, func() {
 			actor.proveCommitSectorAndConfirm(rt, precommit, precommitEpoch, makeProveCommit(actor.nextSectorNo), proveCommitConf{})
 		})
@@ -1101,7 +1101,7 @@ func TestProveCommit(t *testing.T) {
 
 		// handle both prove commits in the same epoch
 		info := actor.getInfo(rt)
-		rt.SetEpoch(precommitEpoch + miner.MaxSealDuration[info.SealProofType] - 1)
+		rt.SetEpoch(precommitEpoch + miner.MaxProveCommitDuration[info.SealProofType] - 1)
 
 		actor.proveCommitSector(rt, precommitA, precommitEpoch, makeProveCommit(sectorNoA))
 		actor.proveCommitSector(rt, precommitB, precommitEpoch, makeProveCommit(sectorNoB))
@@ -2255,7 +2255,7 @@ func (h *actorHarness) preCommitSector(rt *mock.Runtime, params *miner.SectorPre
 		err := eventPayload.MarshalCBOR(&buf)
 		require.NoError(h.t, err)
 		cronParams := power.EnrollCronEventParams{
-			EventEpoch: rt.Epoch() + miner.MaxSealDuration[params.SealProof] + 1,
+			EventEpoch: rt.Epoch() + miner.MaxPreCommitRandomnessLookback + 1,
 			Payload:    buf.Bytes(),
 		}
 		rt.ExpectSend(builtin.StoragePowerActorAddr, builtin.MethodsPower.EnrollCronEvent, &cronParams, big.Zero(), nil, exitcode.Ok)
