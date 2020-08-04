@@ -32,7 +32,7 @@ func TestPartitions(t *testing.T) {
 		store := ipld.NewADTStore(context.Background())
 		partition := emptyPartition(t, store)
 
-		power, err := partition.AddSectors(store, sectors, sectorSize, quantSpec)
+		power, err := partition.AddSectors(store, false, sectors, sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		expectedPower := miner.PowerForSectors(sectorSize, sectors)
@@ -57,7 +57,7 @@ func TestPartitions(t *testing.T) {
 	t.Run("doesn't add sectors twice", func(t *testing.T) {
 		store, partition := setup(t)
 
-		_, err := partition.AddSectors(store, sectors[:1], sectorSize, quantSpec)
+		_, err := partition.AddSectors(store, false, sectors[:1], sectorSize, quantSpec)
 		require.EqualError(t, err, "not all added sectors are new")
 	})
 
@@ -66,11 +66,12 @@ func TestPartitions(t *testing.T) {
 		sectorArr := sectorsArr(t, store, sectors)
 
 		faultSet := bf(4, 5)
-		_, power, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
+		_, powerDelta, newFaultyPower, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		expectedFaultyPower := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, faultSet))
-		assert.True(t, expectedFaultyPower.Equals(power))
+		assert.True(t, expectedFaultyPower.Equals(newFaultyPower))
+		assert.True(t, powerDelta.Equals(miner.NewPowerPairZero())) // not yet active, so there's no power delta.
 
 		assertPartitionState(t, store, partition, quantSpec, sectorSize, sectors, bf(1, 2, 3, 4, 5, 6), bf(4, 5), bf(), bf())
 
@@ -87,18 +88,20 @@ func TestPartitions(t *testing.T) {
 		sectorArr := sectorsArr(t, store, sectors)
 
 		faultSet := bf(4, 5)
-		_, power, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
+		// XXX: test power delta
+		_, _, newFaultyPower, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		expectedFaultyPower := miner.PowerForSectors(sectorSize, selectSectors(t, sectors, faultSet))
-		assert.True(t, expectedFaultyPower.Equals(power))
+		assert.True(t, expectedFaultyPower.Equals(newFaultyPower))
 
 		faultSet = bf(5, 6)
-		newFaults, power, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(3), sectorSize, quantSpec)
+		// XXX: test power delta
+		newFaults, _, newFaultyPower, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(3), sectorSize, quantSpec)
 		require.NoError(t, err)
 		assertBitfieldEquals(t, newFaults, 6)
 		expectedFaultyPower = miner.PowerForSectors(sectorSize, selectSectors(t, sectors, bf(6)))
-		assert.True(t, expectedFaultyPower.Equals(power))
+		assert.True(t, expectedFaultyPower.Equals(newFaultyPower))
 
 		assertPartitionState(t, store, partition, quantSpec, sectorSize, sectors, bf(1, 2, 3, 4, 5, 6), bf(4, 5, 6), bf(), bf())
 
@@ -114,7 +117,7 @@ func TestPartitions(t *testing.T) {
 		sectorArr := sectorsArr(t, store, sectors)
 
 		faultSet := bf(99)
-		_, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
+		_, _, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not all sectors are assigned to the partition")
 	})
@@ -125,7 +128,7 @@ func TestPartitions(t *testing.T) {
 
 		// make 4, 5 and 6 faulty
 		faultSet := bf(4, 5, 6)
-		_, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
+		_, _, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		// add 4 and 5 as recoveries
@@ -142,7 +145,7 @@ func TestPartitions(t *testing.T) {
 
 		// make 4, 5 and 6 faulty
 		faultSet := bf(4, 5, 6)
-		_, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
+		_, _, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		// add 4 and 5 as recoveries
@@ -151,14 +154,14 @@ func TestPartitions(t *testing.T) {
 		require.NoError(t, err)
 
 		// declaring no faults doesn't do anything.
-		newFaults, _, err := partition.DeclareFaults(store, sectorArr, bf(), abi.ChainEpoch(7), sectorSize, quantSpec)
+		newFaults, _, _, err := partition.DeclareFaults(store, sectorArr, bf(), abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.NoError(t, err)
 		assertBitfieldEmpty(t, newFaults) // no new faults.
 
 		assertPartitionState(t, store, partition, quantSpec, sectorSize, sectors, bf(1, 2, 3, 4, 5, 6), bf(4, 5, 6), bf(4, 5), bf())
 
 		// removing sector 5 alters recovery set and recovery power
-		newFaults, _, err = partition.DeclareFaults(store, sectorArr, bf(5), abi.ChainEpoch(10), sectorSize, quantSpec)
+		newFaults, _, _, err = partition.DeclareFaults(store, sectorArr, bf(5), abi.ChainEpoch(10), sectorSize, quantSpec)
 		require.NoError(t, err)
 		assertBitfieldEmpty(t, newFaults) // these faults aren't new.
 
@@ -171,7 +174,7 @@ func TestPartitions(t *testing.T) {
 
 		// make 4, 5 and 6 faulty
 		faultSet := bf(4, 5, 6)
-		_, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
+		_, _, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		// add 4 and 5 as recoveries
@@ -204,7 +207,7 @@ func TestPartitions(t *testing.T) {
 
 		// make 4, 5 and 6 faulty
 		faultSet := bf(4, 5, 6)
-		_, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
+		_, _, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		// add 3, 4 and 5 as recoveries. 3 is not faulty so it's skipped
@@ -236,7 +239,7 @@ func TestPartitions(t *testing.T) {
 
 		// Mark sector 2 faulty, we should skip it when rescheudling
 		faultSet := bf(2)
-		_, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
+		_, _, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		// reschedule
@@ -304,7 +307,7 @@ func TestPartitions(t *testing.T) {
 
 		// fault sector 2
 		faultSet := bf(2)
-		_, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
+		_, _, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		// remove 3 sectors starting with 2
@@ -326,7 +329,7 @@ func TestPartitions(t *testing.T) {
 
 		// fault sector 3, 4, 5 and 6
 		faultSet := bf(3, 4, 5, 6)
-		_, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
+		_, _, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		// mark 4and 5 as a recoveries
@@ -407,7 +410,7 @@ func TestPartitions(t *testing.T) {
 		require.NoError(t, err)
 
 		// Fault declaration for terminated sectors fails.
-		newFaults, _, err := partition.DeclareFaults(store, sectorArr, terminations, abi.ChainEpoch(5), sectorSize, quantSpec)
+		newFaults, _, _, err := partition.DeclareFaults(store, sectorArr, terminations, abi.ChainEpoch(5), sectorSize, quantSpec)
 		require.NoError(t, err)
 		empty, err := newFaults.IsEmpty()
 		require.NoError(t, err)
@@ -420,7 +423,7 @@ func TestPartitions(t *testing.T) {
 
 		// add one fault with an early termination
 		faultSet := bf(4)
-		_, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(2), sectorSize, quantSpec)
+		_, _, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(2), sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		// pop first expiration set
@@ -461,7 +464,7 @@ func TestPartitions(t *testing.T) {
 		store, partition := setup(t)
 		sectorArr := sectorsArr(t, store, sectors)
 
-		_, _, err := partition.DeclareFaults(store, sectorArr, bf(5), abi.ChainEpoch(2), sectorSize, quantSpec)
+		_, _, _, err := partition.DeclareFaults(store, sectorArr, bf(5), abi.ChainEpoch(2), sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		// add a recovery
@@ -481,7 +484,7 @@ func TestPartitions(t *testing.T) {
 
 		// make 4, 5 and 6 faulty
 		faultSet := bf(4, 5, 6)
-		_, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
+		_, _, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		// add 4 and 5 as recoveries
@@ -515,7 +518,7 @@ func TestPartitions(t *testing.T) {
 
 		// fault sector 3, 4, 5 and 6
 		faultSet := bf(3, 4, 5, 6)
-		_, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
+		_, _, _, err := partition.DeclareFaults(store, sectorArr, faultSet, abi.ChainEpoch(7), sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		// mark 4and 5 as a recoveries
@@ -583,7 +586,7 @@ func TestPartitions(t *testing.T) {
 		}
 		sectorNos := bf(ids...)
 
-		power, err := partition.AddSectors(store, manySectors, sectorSize, miner.NoQuantization)
+		power, err := partition.AddSectors(store, false, manySectors, sectorSize, miner.NoQuantization)
 		require.NoError(t, err)
 
 		expectedPower := miner.PowerForSectors(sectorSize, manySectors)

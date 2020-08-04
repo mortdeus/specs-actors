@@ -54,7 +54,7 @@ func TestDeadlines(t *testing.T) {
 	// Partition 2: sectors 5, 6, 7, 8
 	// Partition 3: sectors 9
 	addSectors := func(t *testing.T, store adt.Store, dl *miner.Deadline) {
-		power, err := dl.AddSectors(store, partitionSize, sectors, sectorSize, quantSpec)
+		power, err := dl.AddSectors(store, partitionSize, false, sectors, sectorSize, quantSpec)
 		require.NoError(t, err)
 
 		expectedPower := miner.PowerForSectors(sectorSize, sectors)

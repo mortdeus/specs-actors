@@ -493,7 +493,7 @@ func (st *State) AssignSectorsToDeadlines(
 		return NewPowerPairZero(), err
 	}
 
-	newPower := NewPowerPairZero()
+	activatedPower := NewPowerPairZero()
 	for dlIdx, newPartitions := range assignDeadlines(partitionSize, &deadlineArr, sectors) {
 		if len(newPartitions) == 0 {
 			continue
@@ -502,12 +502,12 @@ func (st *State) AssignSectorsToDeadlines(
 		quant := st.QuantSpecForDeadline(uint64(dlIdx))
 		dl := deadlineArr[dlIdx]
 
-		deadlineNewPower, err := dl.AddSectors(store, partitionSize, newPartitions, sectorSize, quant)
+		deadlineActivatedPower, err := dl.AddSectors(store, partitionSize, false, newPartitions, sectorSize, quant)
 		if err != nil {
 			return NewPowerPairZero(), err
 		}
 
-		newPower = newPower.Add(deadlineNewPower)
+		activatedPower = activatedPower.Add(deadlineActivatedPower)
 
 		err = deadlines.UpdateDeadline(store, uint64(dlIdx), dl)
 		if err != nil {
@@ -519,7 +519,7 @@ func (st *State) AssignSectorsToDeadlines(
 	if err != nil {
 		return NewPowerPairZero(), err
 	}
-	return newPower, nil
+	return activatedPower, nil
 }
 
 // Pops up to max early terminated sectors from all deadlines.
