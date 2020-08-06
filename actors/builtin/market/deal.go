@@ -35,7 +35,7 @@ type DealProposal struct {
 	Provider     addr.Address
 
 	// Label is an arbitrary client chosen label to apply to the deal
-	Label string
+	Label string // PARCHECK: unbounded
 
 	// Nominal start epoch. Deal payment is linear between StartEpoch and EndEpoch,
 	// with total amount StoragePricePerEpoch * (EndEpoch - StartEpoch).

@@ -132,7 +132,7 @@ func (a Actor) AddBalance(rt Runtime, providerOrClientAddress *addr.Address) *ad
 }
 
 type PublishStorageDealsParams struct {
-	Deals []ClientDealProposal
+	Deals []ClientDealProposal // PARCHECK: unbounded
 }
 
 type PublishStorageDealsReturn struct {
@@ -251,7 +251,7 @@ func (a Actor) PublishStorageDeals(rt Runtime, params *PublishStorageDealsParams
 }
 
 type VerifyDealsForActivationParams struct {
-	DealIDs      []abi.DealID
+	DealIDs      []abi.DealID // PARCHECK: unbounded
 	SectorExpiry abi.ChainEpoch
 	SectorStart  abi.ChainEpoch
 }
@@ -282,7 +282,7 @@ func (A Actor) VerifyDealsForActivation(rt Runtime, params *VerifyDealsForActiva
 }
 
 type ActivateDealsParams struct {
-	DealIDs      []abi.DealID
+	DealIDs      []abi.DealID // PARCHECK: unbounded
 	SectorExpiry abi.ChainEpoch
 }
 
@@ -343,7 +343,7 @@ func (a Actor) ActivateDeals(rt Runtime, params *ActivateDealsParams) *adt.Empty
 }
 
 type ComputeDataCommitmentParams struct {
-	DealIDs    []abi.DealID
+	DealIDs    []abi.DealID // PARCHECK: unbounded
 	SectorType abi.RegisteredSealProof
 }
 
@@ -376,7 +376,7 @@ func (a Actor) ComputeDataCommitment(rt Runtime, params *ComputeDataCommitmentPa
 
 type OnMinerSectorsTerminateParams struct {
 	Epoch   abi.ChainEpoch
-	DealIDs []abi.DealID
+	DealIDs []abi.DealID // PARCHECK: unbounded
 }
 
 // Terminate a set of deals in response to their containing sector being terminated.

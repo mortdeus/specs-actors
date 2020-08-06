@@ -187,7 +187,7 @@ func (a Actor) ChangeWorkerAddress(rt Runtime, params *ChangeWorkerAddressParams
 }
 
 type ChangePeerIDParams struct {
-	NewID abi.PeerID
+	NewID abi.PeerID // PARCHECK: arbitrary size
 }
 
 func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyValue {
@@ -206,7 +206,7 @@ func (a Actor) ChangePeerID(rt Runtime, params *ChangePeerIDParams) *adt.EmptyVa
 }
 
 type ChangeMultiaddrsParams struct {
-	NewMultiaddrs []abi.Multiaddrs
+	NewMultiaddrs []abi.Multiaddrs // PARCHECK: arbitrary size
 }
 
 func (a Actor) ChangeMultiaddrs(rt Runtime, params *ChangeMultiaddrsParams) *adt.EmptyValue {
@@ -242,7 +242,7 @@ type SubmitWindowedPoStParams struct {
 	Partitions []PoStPartition
 	// Array of proofs, one per distinct registered proof type present in the sectors being proven.
 	// In the usual case of a single proof type, this array will always have a single element (independent of number of partitions).
-	Proofs []abi.PoStProof
+	Proofs []abi.PoStProof // PARCHECK: arbitrary size, proof type not registered, proofs can have arbitrary sizes.
 }
 
 // Invoked by miner's worker address to submit their fallback post
@@ -275,11 +275,7 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 			rt.Abortf(exitcode.ErrIllegalArgument, "too many partitions %d, limit %d", len(params.Partitions), submissionPartitionLimit)
 		}
 
-		// Load and check deadline.
 		currDeadline := st.DeadlineInfo(currEpoch)
-		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
-		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
-
 		// Check that the miner state indicates that the current proving deadline has started.
 		// This should only fail if the cron actor wasn't invoked, and matters only in case that it hasn't been
 		// invoked for a whole proving period, and hence the missed PoSt submissions from the prior occurrence
@@ -296,6 +292,9 @@ func (a Actor) SubmitWindowedPoSt(rt Runtime, params *SubmitWindowedPoStParams) 
 
 		sectors, err := LoadSectors(store, st.Sectors)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")
+
+		deadlines, err := st.LoadDeadlines(adt.AsStore(rt))
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadlines")
 
 		deadline, err := deadlines.LoadDeadline(store, params.Deadline)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load deadline %d", params.Deadline)
@@ -407,9 +406,8 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 		rt.Abortf(exitcode.ErrIllegalArgument, "seal challenge epoch %v too old, must be after %v", params.SealRandEpoch, challengeEarliest)
 	}
 
-	if params.Expiration <= rt.CurrEpoch() {
-		rt.Abortf(exitcode.ErrIllegalArgument, "sector expiration %v must be after now (%v)", params.Expiration, rt.CurrEpoch())
-	}
+	validateExpiration(rt, rt.CurrEpoch(), params.Expiration, params.SealProof)
+
 	if params.ReplaceCapacity && len(params.DealIDs) == 0 {
 		rt.Abortf(exitcode.ErrIllegalArgument, "cannot replace sector without committing deals")
 	}
@@ -459,10 +457,11 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 			rt.Abortf(exitcode.ErrIllegalState, "sector %v already committed", params.SectorNumber)
 		}
 
-		validateExpiration(rt, rt.CurrEpoch(), params.Expiration, params.SealProof)
-
 		depositMinimum := big.Zero()
 		if params.ReplaceCapacity {
+			// NOTE: we don't validate that the replacement sector
+			// lives at the target deadline/partition. If it
+			// doesn't, sealing may still succeed but replacement will fail.
 			replaceSector := validateReplaceSector(rt, &st, store, params)
 			// Note the replaced sector's initial pledge as a lower bound for the new sector's deposit
 			depositMinimum = replaceSector.InitialPledge
@@ -523,7 +522,7 @@ func (a Actor) PreCommitSector(rt Runtime, params *SectorPreCommitInfo) *adt.Emp
 
 type ProveCommitSectorParams struct {
 	SectorNumber abi.SectorNumber
-	Proof        []byte
+	Proof        []byte // PARCHECK: arbitrary size
 }
 
 // Checks state of the corresponding sector pre-commitment, then schedules the proof to be verified in bulk
@@ -531,6 +530,10 @@ type ProveCommitSectorParams struct {
 // If valid, the power actor will call ConfirmSectorProofsValid at the end of the same epoch as this message.
 func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerAcceptAny()
+
+	if params.SectorNumber > abi.MaxSectorNumber {
+		rt.Abortf(exitcode.ErrIllegalArgument, "sector number greater than maximum")
+	}
 
 	store := adt.AsStore(rt)
 	var st State
@@ -581,6 +584,13 @@ func (a Actor) ProveCommitSector(rt Runtime, params *ProveCommitSectorParams) *a
 
 func (a Actor) ConfirmSectorProofsValid(rt Runtime, params *builtin.ConfirmSectorProofsParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerIs(builtin.StoragePowerActorAddr)
+
+	if len(params.Sectors) > power.MaxMinerProveCommitsPerEpoch {
+		// XXX: log only?
+		rt.Abortf(exitcode.ErrIllegalState, "tried to confirm more prove commits in an epoch than permitted: %d > %d",
+			len(params.Sectors), power.MaxMinerProveCommitsPerEpoch,
+		)
+	}
 
 	// get network stats from other actors
 	rewardStats := requestCurrentEpochBlockReward(rt)
@@ -736,6 +746,10 @@ type CheckSectorProvenParams struct {
 func (a Actor) CheckSectorProven(rt Runtime, params *CheckSectorProvenParams) *adt.EmptyValue {
 	rt.ValidateImmediateCallerAcceptAny()
 
+	if params.SectorNumber > abi.MaxSectorNumber {
+		rt.Abortf(exitcode.ErrIllegalArgument, "sector number out of range")
+	}
+
 	var st State
 	rt.State().Readonly(&st)
 	store := adt.AsStore(rt)
@@ -796,6 +810,8 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 		)
 	}
 
+	currEpoch := rt.CurrEpoch()
+
 	powerDelta := NewPowerPairZero()
 	pledgeDelta := big.Zero()
 	store := adt.AsStore(rt)
@@ -843,12 +859,22 @@ func (a Actor) ExtendSectorExpiration(rt Runtime, params *ExtendSectorExpiration
 				}
 
 				oldSectors, err := sectors.Load(decl.Sectors)
-				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors")
+				builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load sectors in partition %v", key)
 				newSectors := make([]*SectorOnChainInfo, len(oldSectors))
 				for i, sector := range oldSectors {
+					// XXX: < or <=? Should we even have this?
+					// This can happen if the sector should
+					// have already expired, but hasn't
+					// because the end of its deadline
+					// hasn't passed yet.
+					if sector.Expiration <= currEpoch {
+						rt.Abortf(exitcode.ErrIllegalArgument, "cannot extend expiration for expired sector %v",
+							sector.SectorNumber)
+					}
+					// XXX: validate min extension?
 					if decl.NewExpiration < sector.Expiration {
-						rt.Abortf(exitcode.ErrIllegalArgument, "cannot reduce sector expiration to %d from %d",
-							decl.NewExpiration, sector.Expiration)
+						rt.Abortf(exitcode.ErrIllegalArgument, "cannot reduce sector %v's expiration to %d from %d",
+							sector.SectorNumber, decl.NewExpiration, sector.Expiration)
 					}
 					validateExpiration(rt, sector.Activation, decl.NewExpiration, sector.SealProof)
 
@@ -1282,9 +1308,9 @@ func (a Actor) AddLockedFund(rt Runtime, amountToLock *abi.TokenAmount) *adt.Emp
 }
 
 type ReportConsensusFaultParams struct {
-	BlockHeader1     []byte
-	BlockHeader2     []byte
-	BlockHeaderExtra []byte
+	BlockHeader1     []byte // PARCHECK: arbitrary size
+	BlockHeader2     []byte // PARCHECK: arbitrary size
+	BlockHeaderExtra []byte // PARCHECK: arbitrary size
 }
 
 func (a Actor) ReportConsensusFault(rt Runtime, params *ReportConsensusFaultParams) *adt.EmptyValue {
@@ -1646,6 +1672,10 @@ func handleProvingDeadline(rt Runtime) {
 
 // Check expiry is exactly *the epoch before* the start of a proving period.
 func validateExpiration(rt Runtime, activation, expiration abi.ChainEpoch, sealProof abi.RegisteredSealProof) {
+	// Expiration must be after activation. Check this explicitly to avoid an underflow below.
+	if expiration <= activation {
+		rt.Abortf(exitcode.ErrIllegalArgument, "sector expiration %v must be after activation (%v)", expiration, activation)
+	}
 	// expiration cannot be less than minimum after activation
 	if expiration-activation < MinSectorExpiration {
 		rt.Abortf(exitcode.ErrIllegalArgument, "invalid expiration %d, total sector lifetime (%d) must exceed %d after activation %d",

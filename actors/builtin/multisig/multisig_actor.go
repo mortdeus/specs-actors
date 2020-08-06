@@ -64,9 +64,9 @@ func (a Actor) Exports() []interface{} {
 var _ abi.Invokee = Actor{}
 
 type ConstructorParams struct {
-	Signers               []addr.Address
+	Signers               []addr.Address // PARCHECK unbounded
 	NumApprovalsThreshold uint64
-	UnlockDuration        abi.ChainEpoch
+	UnlockDuration        abi.ChainEpoch // PARCHECK unbounded
 }
 
 func (a Actor) Constructor(rt vmr.Runtime, params *ConstructorParams) *adt.EmptyValue {
@@ -123,7 +123,7 @@ type ProposeParams struct {
 	To     addr.Address
 	Value  abi.TokenAmount
 	Method abi.MethodNum
-	Params []byte
+	Params []byte // PARCHECK: unbounded
 }
 
 type ProposeReturn struct {
@@ -400,8 +400,8 @@ func (a Actor) approveTransaction(rt vmr.Runtime, txnID TxnID, txn *Transaction)
 
 		// update approved on the transaction
 		txn.Approved = append(txn.Approved, rt.Message().Caller())
-		 err = ptx.Put(txnID, txn)
-		 builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put transaction %v for approval", txnID)
+		err = ptx.Put(txnID, txn)
+		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to put transaction %v for approval", txnID)
 
 		st.PendingTxns, err = ptx.Root()
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to flush pending transactions")

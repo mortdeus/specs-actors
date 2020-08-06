@@ -86,7 +86,7 @@ func (pca *Actor) resolveAccount(rt vmr.Runtime, raw addr.Address) (addr.Address
 
 type UpdateChannelStateParams struct {
 	Sv     SignedVoucher
-	Secret []byte
+	Secret []byte // PARCHECK: hash of unbounded byte string
 	Proof  []byte
 }
 

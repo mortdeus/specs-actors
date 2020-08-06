@@ -47,7 +47,7 @@ func (a Actor) Constructor(rt vmr.Runtime, rootKey *addr.Address) *adt.EmptyValu
 }
 
 type AddVerifierParams struct {
-	Address   addr.Address
+	Address   addr.Address // PARCHECK: could be a bogus address
 	Allowance DataCap
 }
 
@@ -109,7 +109,7 @@ func (a Actor) RemoveVerifier(rt vmr.Runtime, verifierAddr *addr.Address) *adt.E
 }
 
 type AddVerifiedClientParams struct {
-	Address   addr.Address
+	Address   addr.Address // PARCHECK: could be a bogus address
 	Allowance DataCap
 }
 
@@ -117,6 +117,8 @@ func (a Actor) AddVerifiedClient(rt vmr.Runtime, params *AddVerifiedClientParams
 	if params.Allowance.LessThan(MinVerifiedDealSize) {
 		rt.Abortf(exitcode.ErrIllegalArgument, "allowance %d below MinVerifiedDealSize for add verified client %v", params.Allowance, params.Address)
 	}
+	// The caller will be verified by checking the verifiers table below.
+	// PARCHECK: Should this be restricted to a specific type of ID?
 	rt.ValidateImmediateCallerAcceptAny()
 
 	var st State
@@ -163,7 +165,7 @@ func (a Actor) AddVerifiedClient(rt vmr.Runtime, params *AddVerifiedClientParams
 		// This allowance cannot be changed by calls to AddVerifiedClient as long as the client has not been removed.
 		// If parties need more allowance, they need to create a new verified client or use up the the current allowance
 		// and then create a new verified client.
-		found, err = verifiedClients.Get(AddrKey(params.Address), &verifierCap)
+		found, err = verifiedClients.Get(AddrKey(params.Address), nil)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to get verified client %v", params.Address)
 		if found {
 			rt.Abortf(exitcode.ErrIllegalArgument, "verified client already exists: %v", params.Address)
@@ -218,6 +220,7 @@ func (a Actor) UseBytes(rt vmr.Runtime, params *UseBytesParams) *adt.EmptyValue 
 		if newVcCap.LessThan(MinVerifiedDealSize) {
 			// Delete entry if remaining DataCap is less than MinVerifiedDealSize.
 			// Will be restored later if the deal did not get activated with a ProvenSector.
+			// XXX: This isn't quite true. The client can lose up to MinVerifiedDealSize.
 			err = verifiedClients.Delete(AddrKey(params.Address))
 			builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to delete verified client %v", params.Address)
 		} else {
@@ -262,6 +265,7 @@ func (a Actor) RestoreBytes(rt vmr.Runtime, params *RestoreBytesParams) *adt.Emp
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed to load verifiers")
 
 		// validate we are NOT attempting to do this for a verifier
+		// XXX: This seems expensive and pointless?
 		found, err := verifiers.Get(AddrKey(params.Address), nil)
 		builtin.RequireNoErr(rt, err, exitcode.ErrIllegalState, "failed tp get verifier")
 		if found {

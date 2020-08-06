@@ -49,8 +49,8 @@ type MinerConstructorParams struct {
 	OwnerAddr     addr.Address
 	WorkerAddr    addr.Address
 	SealProofType abi.RegisteredSealProof
-	PeerId        abi.PeerID
-	Multiaddrs    []abi.Multiaddrs
+	PeerId        abi.PeerID       // PARCHECK: arbitrary size
+	Multiaddrs    []abi.Multiaddrs // PARCHECK: arbitrary size.
 }
 
 type SectorStorageWeightDesc struct {
